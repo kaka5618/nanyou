@@ -1,3 +1,6 @@
+# 子项目单独维护 Git，勿由本仓库跟踪
+nanyou/
+
 .DS_Store
 Thumbs.db
 
@@ -12,3 +15,12 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+
+# Next.js
+.next/
+out/
+#依赖目录体积大且可重装，勿提交（含各子目录）
+node_modules/
+
+# Vercel
+.vercel
