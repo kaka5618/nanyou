@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getUserProfileByAuthId } from '@/server/db/user-profiles';
 
 export async function GET() {
   try {
@@ -12,16 +13,11 @@ export async function GET() {
       return NextResponse.json({ user: null });
     }
 
-    // 获取用户资料
-    const { data: profile, error: profileError } = await client
-      .from('user_profiles')
-      .select('profile_id, auth_id, email, nickname, avatar_url')
-      .eq('auth_id', user.id)
-      .maybeSingle();
-
-    if (profileError) {
-      console.error('Get profile error:', profileError);
-    }
+    /** 从 Neon 读取用户资料。 */
+    const profile = await getUserProfileByAuthId(user.id).catch((profileError) => {
+      console.error('Get profile from Neon error:', profileError);
+      return null;
+    });
 
     if (profile) {
       return NextResponse.json({

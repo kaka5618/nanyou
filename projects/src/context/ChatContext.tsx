@@ -108,9 +108,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!chatResponse.ok) {
-        const errorText = await chatResponse.text().catch(() => '');
-        console.error('Chat API error:', chatResponse.status, errorText);
-        throw new Error(`API错误: ${chatResponse.status}`);
+        const raw = await chatResponse.text().catch(() => '');
+        let apiMessage = '';
+        try {
+          const errJson = JSON.parse(raw) as { error?: string; code?: string };
+          if (typeof errJson.error === 'string' && errJson.error) {
+            apiMessage = errJson.error;
+          }
+        } catch {
+          /* 非 JSON */
+        }
+        console.error('Chat API error:', chatResponse.status, raw);
+        throw new Error(
+          apiMessage || `请求失败（${chatResponse.status}），请稍后再试`,
+        );
       }
 
       const data = await chatResponse.json();

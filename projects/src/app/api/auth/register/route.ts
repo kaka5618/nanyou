@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { upsertUserProfile } from '@/server/db/user-profiles';
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,23 +63,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 创建用户资料（使用auth_id关联）
-    const { error: profileError } = await client
-      .from('user_profiles')
-      .insert({
-        auth_id: authData.user.id,
-        email: email,
-        nickname: nickname,
+    /** 注册成功后，将用户资料写入 Neon。 */
+    let profileId = 0;
+    try {
+      const profile = await upsertUserProfile({
+        authId: authData.user.id,
+        email,
+        nickname,
       });
-
-    if (profileError) {
-      console.error('Create profile error:', profileError);
+      profileId = profile.profile_id;
+    } catch (profileError) {
+      console.error('Create profile in Neon error:', profileError);
     }
 
     return NextResponse.json({
       user: {
         id: authData.user.id,
-        profile_id: 0, // 稍后查询获取
+        profile_id: profileId,
         email: email,
         nickname: nickname,
       }

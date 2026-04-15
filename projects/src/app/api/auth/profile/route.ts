@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import {
+  getUserProfileByAuthId,
+  upsertUserProfile,
+  updateUserProfileByAuthId,
+} from '@/server/db/user-profiles';
 
 export async function PUT(request: NextRequest) {
   try {
@@ -19,7 +24,7 @@ export async function PUT(request: NextRequest) {
     const { nickname, avatar_url } = body;
 
     // 更新用户资料
-    const updateData: { nickname?: string; avatar_url?: string; updated_at?: string } = {};
+    const updateData: { nickname?: string; avatar_url?: string } = {};
     
     if (nickname !== undefined) {
       if (nickname.length > 20) {
@@ -35,21 +40,19 @@ export async function PUT(request: NextRequest) {
       updateData.avatar_url = avatar_url;
     }
     
-    updateData.updated_at = new Date().toISOString();
-
-    const { data, error: updateError } = await client
-      .from('user_profiles')
-      .update(updateData)
-      .eq('auth_id', user.id)
-      .select('profile_id, auth_id, email, nickname, avatar_url')
-      .maybeSingle();
-
-    if (updateError) {
-      console.error('Update profile error:', updateError);
-      return NextResponse.json(
-        { error: '更新失败' },
-        { status: 500 }
-      );
+    /** 优先更新 Neon；若资料不存在则补建一条。 */
+    let data = await updateUserProfileByAuthId(user.id, {
+      nickname: updateData.nickname,
+      avatar_url: updateData.avatar_url,
+    });
+    if (!data) {
+      const existing = await getUserProfileByAuthId(user.id);
+      data = await upsertUserProfile({
+        authId: user.id,
+        email: existing?.email || user.email || '',
+        nickname: updateData.nickname || existing?.nickname || '新用户',
+        avatarUrl: updateData.avatar_url ?? existing?.avatar_url ?? null,
+      });
     }
 
     return NextResponse.json({
