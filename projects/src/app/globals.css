@@ -135,3 +135,19 @@
 body {
   @apply font-sans;
 }
+
+/**
+ * Aurora 背景动画兜底：即使 tailwind.config 未被加载，也能看到动态效果。
+ */
+@keyframes aurora {
+  from {
+    background-position: 50% 50%, 50% 50%;
+  }
+  to {
+    background-position: 350% 50%, 350% 50%;
+  }
+}
+
+.animate-aurora {
+  animation: aurora 60s linear infinite;
+}
