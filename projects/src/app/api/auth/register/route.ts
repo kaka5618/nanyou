@@ -50,6 +50,21 @@ async function verifyTurnstileToken(token: string, remoteIp: string | null): Pro
 
 export async function POST(request: NextRequest) {
   try {
+    const supabaseUrl = process.env.COZE_SUPABASE_URL?.trim();
+    const supabaseAnon = process.env.COZE_SUPABASE_ANON_KEY?.trim();
+    if (!supabaseUrl || !supabaseAnon) {
+      console.error(
+        'Register: missing COZE_SUPABASE_URL or COZE_SUPABASE_ANON_KEY (set them in Vercel project env)',
+      );
+      return NextResponse.json(
+        {
+          error:
+            '注册服务未就绪：请在部署平台（如 Vercel）配置 COZE_SUPABASE_URL 与 COZE_SUPABASE_ANON_KEY 后重新部署',
+        },
+        { status: 503 },
+      );
+    }
+
     const { email, password, nickname, turnstileToken } = await request.json();
 
     if (!email || !password || !nickname || !turnstileToken) {
@@ -141,6 +156,18 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Register error:', error);
+    const message =
+      error instanceof Error ? error.message : String(error);
+    /** 常见：Supabase 未配置或网络异常，便于在日志中区分 */
+    if (message.includes('COZE_SUPABASE') || message.includes('is not set')) {
+      return NextResponse.json(
+        {
+          error:
+            '注册服务未就绪：请检查服务端是否已配置 COZE_SUPABASE_URL 与 COZE_SUPABASE_ANON_KEY',
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(
       { error: '服务器错误，请稍后重试' },
       { status: 500 }
