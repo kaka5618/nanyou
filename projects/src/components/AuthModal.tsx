@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { X, Mail, Lock, User, Eye, EyeOff, Heart } from 'lucide-react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   
@@ -28,6 +30,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
     setEmail('');
     setPassword('');
     setNickname('');
+    setTurnstileToken('');
     setError('');
   }, [activeTab]);
 
@@ -65,7 +68,12 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
           setIsLoading(false);
           return;
         }
-        const result = await register(email, password, nickname);
+        if (!turnstileToken) {
+          setError('请完成人机验证');
+          setIsLoading(false);
+          return;
+        }
+        const result = await register(email, password, nickname, turnstileToken);
         if (result.success) {
           onClose();
         } else {
@@ -205,6 +213,23 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
             <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm">
               {error}
             </div>
+          )}
+
+          {activeTab === 'register' && (
+            <Turnstile
+              siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+              onSuccess={(token) => {
+                setTurnstileToken(token);
+                setError('');
+              }}
+              onExpire={() => {
+                setTurnstileToken('');
+              }}
+              onError={() => {
+                setTurnstileToken('');
+                setError('人机验证加载失败，请刷新后重试');
+              }}
+            />
           )}
 
           {/* 提交按钮 */}

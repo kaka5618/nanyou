@@ -2,11 +2,57 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { upsertUserProfile } from '@/server/db/user-profiles';
 
+interface TurnstileVerifyResponse {
+  success: boolean;
+}
+
+/**
+ * 校验 Cloudflare Turnstile token 是否有效。
+ */
+async function verifyTurnstileToken(token: string, remoteIp: string | null): Promise<boolean> {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) {
+    console.error('Missing TURNSTILE_SECRET_KEY');
+    return false;
+  }
+
+  const params = new URLSearchParams({
+    secret,
+    response: token,
+  });
+
+  if (remoteIp) {
+    params.append('remoteip', remoteIp);
+  }
+
+  try {
+    const verifyResponse = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params,
+      cache: 'no-store',
+    });
+
+    if (!verifyResponse.ok) {
+      console.error('Turnstile verify request failed:', verifyResponse.status);
+      return false;
+    }
+
+    const verifyResult = (await verifyResponse.json()) as TurnstileVerifyResponse;
+    return verifyResult.success === true;
+  } catch (error) {
+    console.error('Turnstile verify error:', error);
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, nickname } = await request.json();
+    const { email, password, nickname, turnstileToken } = await request.json();
 
-    if (!email || !password || !nickname) {
+    if (!email || !password || !nickname || !turnstileToken) {
       return NextResponse.json(
         { error: '请填写所有必填项' },
         { status: 400 }
@@ -23,6 +69,15 @@ export async function POST(request: NextRequest) {
     if (nickname.length > 20) {
       return NextResponse.json(
         { error: '昵称不能超过20个字符' },
+        { status: 400 }
+      );
+    }
+
+    const remoteIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const isTurnstileValid = await verifyTurnstileToken(turnstileToken, remoteIp);
+    if (!isTurnstileValid) {
+      return NextResponse.json(
+        { error: '人机验证失败，请重试' },
         { status: 400 }
       );
     }
