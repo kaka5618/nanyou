@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
-import { Inspector } from 'react-dev-inspector';
 import './globals.css';
+import { DevInspector } from '@/components/DevInspector';
 import { ChatProvider } from '@/context/ChatContext';
 import { AuthProvider } from '@/context/AuthContext';
 
@@ -32,12 +32,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
+  const cozeDevInspector = process.env.COZE_PROJECT_ENV === 'DEV';
 
   return (
     <html lang="zh-CN">
       <body className="antialiased">
-        {isDev && <Inspector />}
+        <DevInspector enabled={cozeDevInspector} />
         <AuthProvider>
           <ChatProvider>{children}</ChatProvider>
         </AuthProvider>
