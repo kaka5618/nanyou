@@ -206,41 +206,53 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 character.appearance
               );
 
-              const imageResponse = await fetchWithTimeout('/api/image', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  prompt: enhancedPrompt,
-                  uid: `uid-${Date.now()}`,
-                }),
-              }, 30000);
+              /** 与 `src/app/api/image/route.ts` 的 `maxDuration` 对齐，避免先超时导致一直「生成中」 */
+              const imageResponse = await fetchWithTimeout(
+                '/api/image',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    prompt: enhancedPrompt,
+                    uid: `uid-${Date.now()}`,
+                  }),
+                },
+                55000,
+              );
 
-              if (imageResponse.ok) {
-                const imageData = await imageResponse.json();
-                if (imageData.imageUri) {
-                  const imageMessage: Message = {
-                    id: `img-${Date.now()}`,
-                    role: 'character',
-                    type: 'image',
-                    content: '',
-                    imageUri: imageData.imageUri,
-                    imagePrompt,
-                    timestamp: Date.now(),
-                  };
+              const imageData = (await imageResponse.json().catch(() => ({}))) as {
+                imageUri?: string;
+                error?: string;
+              };
 
-                  setChatState(prev => ({
-                    ...prev,
-                    messages: [...prev.messages, imageMessage],
-                    imageCount: prev.imageCount + 1,
-                    isGeneratingImage: false,
-                  }));
-                }
+              if (imageResponse.ok && imageData.imageUri) {
+                const imageMessage: Message = {
+                  id: `img-${Date.now()}`,
+                  role: 'character',
+                  type: 'image',
+                  content: '',
+                  imageUri: imageData.imageUri,
+                  imagePrompt,
+                  timestamp: Date.now(),
+                };
+
+                setChatState(prev => ({
+                  ...prev,
+                  messages: [...prev.messages, imageMessage],
+                  imageCount: prev.imageCount + 1,
+                }));
+              } else {
+                console.warn(
+                  'Image API:',
+                  imageData.error || `HTTP ${imageResponse.status}`,
+                );
               }
             } catch (err) {
               console.warn('Image generation failed:', err);
+            } finally {
               setChatState(prev => ({ ...prev, isGeneratingImage: false }));
             }
-          })()
+          })(),
         );
       } else if (imageUri) {
         // LLM直接返回了图片URL
