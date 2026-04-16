@@ -21,7 +21,15 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
   const [turnstileToken, setTurnstileToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
+  /**
+   * `NEXT_PUBLIC_*` 仅在构建时写入客户端；Vercel 上若漏配或部署未重建，浏览器里会为空。
+   * 通过 `/api/auth/turnstile-site-key` 在请求时读取 `TURNSTILE_SITE_KEY`（或回退到 NEXT_PUBLIC）以拿到密钥。
+   */
+  const [turnstileKeyFromApi, setTurnstileKeyFromApi] = useState<string | null>(null);
+
+  const bakedTurnstileSiteKey = (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '').trim();
+
   const { login, register } = useAuth();
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -33,6 +41,35 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
     setTurnstileToken('');
     setError('');
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'register') {
+      setTurnstileKeyFromApi(null);
+      return;
+    }
+    let cancelled = false;
+    setTurnstileKeyFromApi(null);
+    void fetch('/api/auth/turnstile-site-key')
+      .then((res) => res.json() as Promise<{ siteKey?: string }>)
+      .then((data) => {
+        if (!cancelled) setTurnstileKeyFromApi(data.siteKey?.trim() ?? '');
+      })
+      .catch(() => {
+        if (!cancelled) setTurnstileKeyFromApi('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeTab]);
+
+  const effectiveTurnstileSiteKey = (
+    turnstileKeyFromApi !== null
+      ? turnstileKeyFromApi || bakedTurnstileSiteKey
+      : bakedTurnstileSiteKey
+  ).trim();
+
+  const isTurnstileKeyPending =
+    activeTab === 'register' && isOpen && turnstileKeyFromApi === null && !bakedTurnstileSiteKey;
 
   // ESC关闭
   useEffect(() => {
@@ -68,8 +105,15 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
           setIsLoading(false);
           return;
         }
+        if (!effectiveTurnstileSiteKey) {
+          setError(
+            '当前环境未配置验证码：请在 Vercel 设置 TURNSTILE_SITE_KEY 或 NEXT_PUBLIC_TURNSTILE_SITE_KEY 后重新部署',
+          );
+          setIsLoading(false);
+          return;
+        }
         if (!turnstileToken) {
-          setError('请完成人机验证');
+          setError('请在下方的验证框中完成人机验证');
           setIsLoading(false);
           return;
         }
@@ -98,10 +142,10 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
       {/* 弹窗主体 */}
       <div 
         ref={modalRef}
-        className="relative w-full max-w-[400px] mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="relative flex max-h-[min(92dvh,760px)] w-full max-w-[400px] flex-col mx-4 overflow-hidden rounded-3xl bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
       >
         {/* 顶部装饰 */}
-        <div className="h-24 bg-gradient-to-br from-pink-400 via-purple-400 to-indigo-400 flex items-center justify-center">
+        <div className="flex h-24 shrink-0 items-center justify-center bg-gradient-to-br from-pink-400 via-purple-400 to-indigo-400">
           <div className="text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <Heart className="w-6 h-6 text-white fill-white animate-pulse" />
@@ -121,7 +165,7 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
         </button>
 
         {/* Tab切换 */}
-        <div className="flex border-b border-gray-100">
+        <div className="flex shrink-0 border-b border-gray-100">
           <button
             onClick={() => setActiveTab('login')}
             className={cn(
@@ -149,7 +193,10 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
         </div>
 
         {/* 表单内容 */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-6"
+        >
           {/* 昵称（仅注册） */}
           {activeTab === 'register' && (
             <div className="space-y-1.5">
@@ -208,28 +255,57 @@ export function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalPr
             </div>
           </div>
 
-          {/* 错误提示 */}
-          {error && (
-            <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm">
-              {error}
+          {activeTab === 'register' && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-700">人机验证</p>
+              {isTurnstileKeyPending ? (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-center text-sm text-gray-600">
+                  正在加载验证组件…
+                </div>
+              ) : !effectiveTurnstileSiteKey ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  未检测到站点密钥：请在 Vercel → Settings → Environment Variables 添加{' '}
+                  <code className="rounded bg-amber-100/80 px-1">TURNSTILE_SITE_KEY</code>（推荐，与
+                  Cloudflare 站点密钥相同）或{' '}
+                  <code className="rounded bg-amber-100/80 px-1">NEXT_PUBLIC_TURNSTILE_SITE_KEY</code>
+                  ，保存后执行 <strong>Redeploy</strong>。Cloudflare 里请把{' '}
+                  <code className="rounded bg-amber-100/80 px-1">nanyou-ten.vercel.app</code>{' '}
+                  加入站点的主机名列表，小组件类型建议用「托管」。
+                </div>
+              ) : (
+                <div className="flex min-h-[72px] w-full justify-center overflow-visible py-1">
+                  <Turnstile
+                    key={`${isOpen}-${activeTab}-${effectiveTurnstileSiteKey.slice(0, 8)}`}
+                    siteKey={effectiveTurnstileSiteKey}
+                    options={{
+                      appearance: 'always',
+                      theme: 'auto',
+                      size: 'normal',
+                      language: 'zh-CN',
+                    }}
+                    scriptOptions={{ appendTo: 'body' }}
+                    onSuccess={(token) => {
+                      setTurnstileToken(token);
+                      setError('');
+                    }}
+                    onExpire={() => {
+                      setTurnstileToken('');
+                    }}
+                    onError={() => {
+                      setTurnstileToken('');
+                      setError('人机验证加载失败，请检查网络或域名是否在 Cloudflare 站点密钥的主机名列表中');
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          {activeTab === 'register' && (
-            <Turnstile
-              siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
-              onSuccess={(token) => {
-                setTurnstileToken(token);
-                setError('');
-              }}
-              onExpire={() => {
-                setTurnstileToken('');
-              }}
-              onError={() => {
-                setTurnstileToken('');
-                setError('人机验证加载失败，请刷新后重试');
-              }}
-            />
+          {/* 错误提示 */}
+          {error && (
+            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
+              {error}
+            </div>
           )}
 
           {/* 提交按钮 */}
